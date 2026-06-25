@@ -1,0 +1,6 @@
+{
+  "name": "VestApp Dashboard",
+  "description": "Painel de controle e monitoramento de entregas locais para o ecossistema VestApp com simulação de frete, repasses a motoboys e extrato financeiro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
