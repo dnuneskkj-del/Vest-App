@@ -1,0 +1,11 @@
+{
+  "name": "VestApp - O Ninho da Aprovação",
+  "description": "A plataforma de estudos definitiva para vestibulandos. Cronograma personalizado com IA, simulados, redação e gamificação.",
+  "requestFramePermissions": [
+    "clipboard-write",
+    "clipboard-read"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "short_name": "VestApp",
+  "name": "VestApp - O Ninho da Aprovação",
+  "icons": [
+    {
+      "src": "/Vestapp/img/vest.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/Vestapp/img/vest.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#00f2ff",
+  "background_color": "#0a0a0a"
+}

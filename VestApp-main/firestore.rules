@@ -1,0 +1,198 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUser(data) {
+      return (!('uid' in data) || data.uid == null || (data.uid is string && data.uid == request.auth.uid)) &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100)) &&
+             (!('handle' in data) || data.handle == null || (data.handle is string && data.handle.size() > 0 && data.handle.size() < 50)) &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() < 255)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() < 10000)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 1000000)) &&
+             (!('coverURL' in data) || data.coverURL == null || (data.coverURL is string && data.coverURL.size() < 1000000)) &&
+             (!('avatarEdited' in data) || data.avatarEdited == null || data.avatarEdited is bool) &&
+             (!('level' in data) || data.level == null || (data.level is int || data.level is float)) &&
+             (!('xp' in data) || data.xp == null || (data.xp is int || data.xp is float)) &&
+             (!('essayCount' in data) || data.essayCount == null || (data.essayCount is int || data.essayCount is float)) &&
+             (!('followersCount' in data) || data.followersCount == null || (data.followersCount is int || data.followersCount is float)) &&
+             (!('followingCount' in data) || data.followingCount == null || (data.followingCount is int || data.followingCount is float)) &&
+             (!('totalFocusSeconds' in data) || data.totalFocusSeconds == null || (data.totalFocusSeconds is int || data.totalFocusSeconds is float)) &&
+             (!('simuladosCount' in data) || data.simuladosCount == null || (data.simuladosCount is int || data.simuladosCount is float)) &&
+             (!('role' in data) || data.role == null || (data.role is string && data.role in ['admin', 'user'])) &&
+             (!('createdAt' in data) || data.createdAt == null || data.createdAt is timestamp || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp || data.updatedAt is string);
+    }
+
+    function isValidPost(data) {
+      return (!('authorId' in data) || (data.authorId == request.auth.uid)) &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() > 0 && data.authorName.size() < 100)) &&
+             (!('content' in data) || data.content == null || (data.content is string && data.content.size() >= 0 && data.content.size() < 10000)) &&
+             (!('imageURL' in data) || data.imageURL == null || (data.imageURL is string && data.imageURL.size() < 2000000)) &&
+             (!('videoURL' in data) || data.videoURL == null || (data.videoURL is string && data.videoURL.size() < 2000000)) &&
+             (!('authorPhoto' in data) || data.authorPhoto == null || (data.authorPhoto is string && data.authorPhoto.size() < 2000000)) &&
+             (!('subject' in data) || (data.subject is string && data.subject.size() < 100)) &&
+             (!('likesCount' in data) || data.likesCount is int) &&
+             (!('commentsCount' in data) || data.commentsCount is int) &&
+             (!('repostsCount' in data) || data.repostsCount is int) &&
+             (!('type' in data) || data.type in ['text', 'image', 'video', 'repost', 'quote']) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidComment(data) {
+      return (!('authorId' in data) || (data.authorId == request.auth.uid)) &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() > 0 && data.authorName.size() < 100)) &&
+             (!('text' in data) || (data.text is string && data.text.size() > 0 && data.text.size() < 1000)) &&
+             (!('authorPhoto' in data) || data.authorPhoto == null || (data.authorPhoto is string && data.authorPhoto.size() < 2000000)) &&
+             (!('authorHandle' in data) || (data.authorHandle is string && data.authorHandle.size() < 100)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidPresence(data, userId) {
+      return data.keys().hasAll(['uid', 'status', 'lastSeen']) &&
+             data.uid == request.auth.uid &&
+             userId == request.auth.uid &&
+             data.status in ['online', 'offline'] &&
+             data.lastSeen is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['recipientId', 'senderId', 'senderName', 'type', 'message', 'read', 'createdAt']) &&
+             data.recipientId is string && isValidId(data.recipientId) &&
+             data.senderId == request.auth.uid &&
+             data.senderName is string && data.senderName.size() > 0 &&
+             data.type in ['like', 'comment', 'follow', 'repost', 'quote'] &&
+             (!('postId' in data) || data.postId == null || isValidId(data.postId)) &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 500 &&
+             data.read == false &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Users
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if (userId == 'vestapp_official_mascot') ||
+                      (isOwner(userId) && isValidUser(request.resource.data) && 
+                      request.resource.data.keys().hasAll(['uid', 'displayName', 'handle', 'createdAt']));
+      allow update: if (userId == 'vestapp_official_mascot') || (
+                      isAuthenticated() && (
+                        (isOwner(userId) && isValidUser(request.resource.data) &&
+                         (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid)) ||
+                        isAdmin() ||
+                        // Allow followersCount/followingCount updates from others (for follow/unfollow)
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followersCount', 'followingCount']))
+                      )
+                    );
+    }
+
+    // Posts
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPost(request.resource.data) &&
+                      request.resource.data.keys().hasAll(['authorId', 'authorName', 'content', 'createdAt']);
+      allow update: if isAuthenticated() && (
+                      (isOwner(resource.data.authorId) && isValidPost(request.resource.data)) ||
+                      // Allow likes/comments/reposts count updates from others
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'commentsCount', 'repostsCount']))
+                    );
+      allow delete: if isAuthenticated() && (
+                      resource == null ||
+                      isOwner(resource.data.authorId) || 
+                      isAdmin() || 
+                      (resource.data.authorId == '4WE2Ks90UUXIfrmh5AFQOdnQTTm1' || resource.data.authorId == 'vestapp_official_mascot')
+                    );
+
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidComment(request.resource.data) &&
+                        request.resource.data.keys().hasAll(['authorId', 'authorName', 'text', 'createdAt']);
+        allow delete: if isOwner(resource.data.authorId) || 
+                       isOwner(get(/databases/$(database)/documents/posts/$(postId)).data.authorId) || 
+                       isAdmin();
+      }
+    }
+
+    // Likes
+    match /likes/{likeId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Follows
+    match /follows/{followId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Presence
+    match /presence/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidPresence(request.resource.data, userId);
+    }
+
+    // Schedules
+    match /schedules/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+      allow update: if isAuthenticated() && 
+                    resource.data.recipientId == request.auth.uid && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+    }
+
+    // Essay Submissions
+    match /essay_submissions/{submissionId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+    }
+
+    // Simulado Results
+    match /simulado_results/{resultId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+    }
+
+    // Test collection (for connection test)
+    match /test/connection {
+      allow read: if true; // Allow anyone to read the test document for connection verification
+    }
+  }
+}
